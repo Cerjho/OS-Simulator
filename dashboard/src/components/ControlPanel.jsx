@@ -93,25 +93,20 @@ export default function ControlPanel({
       // Toggle off
       setPreviewName(null);
       setPreviewData(null);
-      setPreviewError(null);
       return;
     }
 
     setPreviewName(presetName);
     setLoadingPreview(true);
     setPreviewData(null);
-    setPreviewError(null);
 
     try {
       const res = await fetch(buildApiUrl(`/api/experiments/${presetName}`));
       if (res.ok) {
         const data = await res.json();
         setPreviewData(data);
-      } else {
-        setPreviewError(`Server returned ${res.status}: ${res.statusText}`);
       }
     } catch (err) {
-      setPreviewError(`Network error: ${err.message}`);
       console.error('[ControlPanel] Preview fetch error:', err);
     } finally {
       setLoadingPreview(false);
@@ -291,12 +286,6 @@ export default function ControlPanel({
 
             {loadingPreview && (
               <span className="text-[10px] text-slate-500 animate-pulse">Loading…</span>
-            )}
-
-            {previewError && (
-              <div className="mt-2 p-2 bg-red-950/40 border border-red-500/40 rounded text-red-400 text-[10px]">
-                {previewError}
-              </div>
             )}
 
             {previewData && (
