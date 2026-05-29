@@ -84,7 +84,7 @@ python -m pytest tests/unit/test_scheduler_fcfs.py -v
 
 ### Evaluation Preset Workloads
 
-The simulator includes 7 built-in evaluation preset workloads that configure the OS for specific scenarios (e.g., deadlock demonstration, memory pressure, I/O heavy). You can run them directly from the dashboard UI via the **Control Panel**.
+The simulator includes 8 built-in evaluation preset workloads that configure the OS for specific scenarios (e.g., deadlock demonstration, memory pressure, I/O heavy). You can run them directly from the dashboard UI via the **Control Panel**.
 
 ### CLI Benchmarks
 

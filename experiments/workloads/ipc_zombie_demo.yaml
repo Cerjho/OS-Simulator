@@ -1,0 +1,55 @@
+name: IPC and Zombie Demo
+description: Demonstrates process forking, waiting for children, and zombie states.
+processes:
+  - name: ParentProcess
+    priority: 3
+    burst: 40
+    memory_pages: 4
+    arrival_time: 1
+    sync_requests:
+      # At tick 2, spawn a child
+      - tick: 2
+        action: fork
+        child_name: FastChild
+        child_burst: 3
+        priority: 4
+
+      # Spawn a child that takes a long time
+      - tick: 4
+        action: fork
+        child_name: SlowChild
+        child_burst: 20
+        priority: 2
+
+      # Wait for SpeedyZombie (should reap instantly)
+      - tick: 8
+        action: wait
+
+      # Spawn a sub-manager that ALSO spawns its own children!
+      # We now use the engine's new 'child_sync_requests' payload.
+      - tick: 10
+        action: fork
+        child_name: SubManager
+        child_burst: 15
+        priority: 5
+        child_sync_requests:
+          - tick: 12
+            action: fork
+            child_name: GrandChildA
+            child_burst: 5
+          - tick: 15
+            action: fork
+            child_name: GrandChildB
+            child_burst: 10
+          - tick: 20
+            action: wait
+          - tick: 22
+            action: wait
+
+      # Wait for LongRunningChild
+      - tick: 12
+        action: wait
+        
+      # Wait for SubManager
+      - tick: 30
+        action: wait

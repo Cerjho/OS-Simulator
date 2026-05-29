@@ -15,9 +15,13 @@ Workloads are defined as YAML files in `experiments/workloads/`. A workload spec
 
 Included workloads:
 *   `standard_mix.yaml`: A balanced mix of CPU-bound and I/O-bound processes.
+*   `pure_compute.yaml`: CPU-bound tasks with no I/O designed to test CPU scheduler efficiency.
 *   `io_heavy.yaml`: Processes that frequently block for disk reads/writes.
 *   `memory_pressure.yaml`: Processes with large memory footprints designed to trigger thrashing.
 *   `deadlock_demo.yaml`: Specific resource request patterns designed to induce circular waits.
+*   `priority_inversion.yaml`: Demonstrates priority inversion scenarios where low-priority tasks hold locks needed by high-priority tasks.
+*   `ipc_zombie_demo.yaml`: A comprehensive process hierarchy demonstrating FORK/WAIT syscalls, Inter-Process Communication, and Zombie state management.
+*   `stress_test.yaml`: High volume of concurrent processes, I/O, and memory allocations to test system limits.
 
 ## Executing an Experiment Suite
 
