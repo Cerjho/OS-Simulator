@@ -91,41 +91,24 @@ async def update_configuration(partial_update: dict[str, Any]) -> dict[str, Any]
     # Persist serialized update block to underlying configuration file
     target_file.write_text(yaml.dump(current_raw))
 
-    # Sync matching configurations to all preset workload files so the dashboard is the ultimate source of truth
-    try:
-        workloads_dir = Path("experiments/workloads")
-        if workloads_dir.exists():
-            for wl_file in workloads_dir.glob("*.yaml"):
-                try:
-                    wl_data = yaml.safe_load(wl_file.read_text()) or {}
-                    wl_modified = False
-                    
-                    # Map workload section keys to global section keys
-                    sections_map = {
-                        "scheduler": "scheduler",
-                        "deadlock": "deadlock",
-                        "processes_config": "processes"
-                    }
-                    
-                    for wl_sec, global_sec in sections_map.items():
-                        if wl_sec in wl_data and global_sec in current_raw:
-                            # Update only the keys that the workload explicitly defines
-                            for k in list(wl_data[wl_sec].keys()):
-                                if k in current_raw[global_sec]:
-                                    wl_data[wl_sec][k] = current_raw[global_sec][k]
-                                    wl_modified = True
-                    
-                    if wl_modified:
-                        wl_file.write_text(yaml.dump(wl_data, sort_keys=False))
-                except Exception as e:
-                    print(f"[Config API] Failed to sync workload {wl_file.name}: {e}")
-    except Exception as e:
-        print(f"[Config API] Workload sync failed: {e}")
-
     # Smart Kernel Restart/Hot-Reload logic
     if deps.kernel_instance:
         old_cfg = deps.kernel_instance.config
-        # Check if any structural hardware parameters changed that require a full restart
+        is_preset = getattr(deps.kernel_instance, "is_preset", False)
+
+        if is_preset:
+            # For preset workloads, we DO NOT perform structural restarts and we DO NOT
+            # hot-reload core parameters (scheduler, memory, deadlock) to protect the experiment.
+            # We only hot-reload the sandbox process injection/spawn settings.
+            old_cfg.processes.auto_spawn = new_cfg.processes.auto_spawn
+            old_cfg.processes.spawn_interval_ticks = new_cfg.processes.spawn_interval_ticks
+            
+            old_cfg.logging.level = new_cfg.logging.level
+            old_cfg.logging.log_to_file = new_cfg.logging.log_to_file
+            
+            return {"status": "config_updated_preset_protected", "config": current_raw}
+
+        # Sandbox Mode: Check if any structural hardware parameters changed that require a full restart
         structural_changed = (
             old_cfg.memory != new_cfg.memory or
             old_cfg.disk != new_cfg.disk or
@@ -168,6 +151,8 @@ async def update_configuration(partial_update: dict[str, Any]) -> dict[str, Any]
             old_cfg.logging.log_to_file = new_cfg.logging.log_to_file
 
             return {"status": "config_updated_hot_reloaded", "config": current_raw}
+
+    return {"status": "config_updated", "config": current_raw}
 
 
 @router.get("/experiments")
@@ -239,28 +224,19 @@ def _load_workload_yaml(name: str) -> tuple[dict[str, Any], list[dict[str, Any]]
 
 def _apply_config_overrides(kernel: Kernel, parsed_workload: dict[str, Any]) -> None:
     """Apply workload-specific scheduler/process/deadlock overrides to the kernel config
-    and persist them to simulation.yaml so the dashboard stays in sync."""
+    strictly in-memory. This protects the physical simulation.yaml sandbox config and
+    eliminates file locking issues."""
     try:
-        target_file = Path("simulation.yaml")
-        current_raw: dict[str, Any] = {}
-        if target_file.exists():
-            current_raw = yaml.safe_load(target_file.read_text()) or {}
-
         section_map = {
-            "scheduler": ("scheduler", kernel.config.scheduler),
-            "processes_config": ("processes", kernel.config.processes),
-            "deadlock": ("deadlock", kernel.config.deadlock),
+            "scheduler": kernel.config.scheduler,
+            "processes_config": kernel.config.processes,
+            "deadlock": kernel.config.deadlock,
         }
 
-        for wl_key, (cfg_key, cfg_obj) in section_map.items():
+        for wl_key, cfg_obj in section_map.items():
             if wl_key in parsed_workload:
-                if cfg_key not in current_raw:
-                    current_raw[cfg_key] = {}
                 for k, v in parsed_workload[wl_key].items():
                     setattr(cfg_obj, k, v)
-                    current_raw[cfg_key][k] = v
-
-        target_file.write_text(yaml.dump(current_raw))
     except Exception as exc:
         print(f"[Experiment API] Config override failed: {exc}")
 
@@ -335,6 +311,7 @@ async def run_experiment_preset(payload: RunExperimentRequest) -> dict[str, Any]
 
     # Step 3: Create fresh kernel with config overrides
     new_kernel = Kernel("simulation.yaml")
+    new_kernel.is_preset = True
     _apply_config_overrides(new_kernel, parsed_workload)
 
     # Step 4: Initialize subsystems synchronously BEFORE injecting processes

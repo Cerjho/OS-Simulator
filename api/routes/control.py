@@ -29,9 +29,21 @@ class InjectProcessRequest(BaseModel):
 @router.post("/control/start")
 async def start_simulation(kernel: Kernel = Depends(get_kernel)) -> dict[str, Any]:
     """Launch simulation subsystems and start clock execution loop."""
+    import api.dependencies as deps
+    
     # BUG-15 fix: Guard against duplicate start calls creating multiple tick loops
     if kernel.clock.is_running:
         return {"status": "already_running", "tick": kernel.clock.tick_count}
+
+    # If the current kernel was a preset and it finished/stopped, 
+    # clicking 'Start' should boot a fresh Sandbox kernel.
+    if getattr(kernel, "is_preset", False):
+        new_kernel = Kernel("simulation.yaml")
+        await new_kernel._init_subsystems()
+        new_kernel._initialized = True
+        deps.kernel_instance = new_kernel
+        kernel = new_kernel
+
     # Run the start loop asynchronously in the background so API does not block HTTP callers
     asyncio.create_task(kernel.start())
     # Briefly yield context to allow initial tick initialization to publish basic state
