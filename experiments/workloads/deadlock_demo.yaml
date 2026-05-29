@@ -1,0 +1,60 @@
+workload_name: Circular Wait-For Deadlock Demonstration Workload
+seed: 777
+scheduler:
+  algorithm: round_robin
+  time_quantum: 2
+processes_config:
+  auto_spawn: false
+  initial_load: 0
+processes:
+  - name: D1
+    burst: 15
+    priority: 5
+    memory_pages: 4
+    sync_requests:
+      - tick: 1
+        action: acquire
+        resource: R1
+      - tick: 4
+        action: acquire
+        resource: R2
+      - tick: 12
+        action: release
+        resource: R2
+      - tick: 13
+        action: release
+        resource: R1
+  - name: D2
+    burst: 15
+    priority: 3
+    memory_pages: 4
+    sync_requests:
+      - tick: 2
+        action: acquire
+        resource: R2
+      - tick: 6
+        action: acquire
+        resource: R3
+      - tick: 12
+        action: release
+        resource: R3
+      - tick: 13
+        action: release
+        resource: R2
+  - name: D3
+    burst: 15
+    priority: 6
+    memory_pages: 4
+    sync_requests:
+      - tick: 3
+        action: acquire
+        resource: R3
+      - tick: 8
+        action: acquire
+        resource: R1
+      - tick: 12
+        action: release
+        resource: R1
+      - tick: 13
+        action: release
+        resource: R3

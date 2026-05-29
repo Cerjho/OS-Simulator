@@ -1,0 +1,38 @@
+clock:
+  auto_start: false
+  max_ticks: 10000
+  tick_rate_ms: 100
+cpu:
+  context_switch_cost: 2
+  cores: 1
+deadlock:
+  detection_interval: 10
+  recovery_strategy: terminate_youngest
+disk:
+  cylinders: 200
+  initial_head: 53
+  scheduling: c-scan
+  seek_time_per_track: 1
+filesystem:
+  block_size_kb: 4
+  total_blocks: 512
+  type: fat
+logging:
+  level: INFO
+  log_path: logs/simulation.log
+  log_to_file: true
+memory:
+  algorithm: lru
+  page_size_kb: 4
+  swap_enabled: true
+  tlb_size: 16
+  total_frames: 64
+processes:
+  auto_spawn: true
+  initial_load: 5
+  spawn_interval_ticks: 20
+scheduler:
+  aging_interval: 50
+  algorithm: round_robin
+  preemptive: true
+  time_quantum: 4

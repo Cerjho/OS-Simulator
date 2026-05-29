@@ -1,0 +1,19 @@
+site_name: OS Simulator
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - User Guide:
+    - Dashboard: user-guide/dashboard.md
+    - Experiments: user-guide/experiments.md
+    - Config Reference: user-guide/config-ref.md
+  - Concepts:
+    - CPU Scheduling: concepts/scheduling.md
+    - Memory Management: concepts/memory.md
+    - File Systems: concepts/filesystem.md
+    - I/O Management: concepts/io.md
+    - Synchronization: concepts/sync.md
+plugins:
+  - search

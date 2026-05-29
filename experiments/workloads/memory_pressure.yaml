@@ -1,0 +1,19 @@
+workload_name: Virtual Memory Thrashing Pressure Workload
+seed: 999
+processes:
+  - name: M1
+    burst: 20
+    priority: 1
+    memory_pages: 12
+  - name: M2
+    burst: 25
+    priority: 5
+    memory_pages: 16
+  - name: M3
+    burst: 18
+    priority: 2
+    memory_pages: 14
+  - name: M4
+    burst: 30
+    priority: 3
+    memory_pages: 20

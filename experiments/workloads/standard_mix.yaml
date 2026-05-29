@@ -1,0 +1,19 @@
+workload_name: Standard Mixed Execution Workload
+seed: 42
+processes:
+  - name: P1
+    burst: 8
+    priority: 5
+    memory_pages: 3
+  - name: P2
+    burst: 15
+    priority: 2
+    memory_pages: 5
+  - name: P3
+    burst: 6
+    priority: 8
+    memory_pages: 2
+  - name: P4
+    burst: 12
+    priority: 4
+    memory_pages: 6
