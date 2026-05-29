@@ -1,0 +1,19 @@
+workload_name: Pure Compute (CPU Bound) Workload
+seed: 404
+processes:
+  - name: C1
+    burst: 60
+    priority: 5
+    memory_pages: 2
+  - name: C2
+    burst: 45
+    priority: 5
+    memory_pages: 2
+  - name: C3
+    burst: 80
+    priority: 5
+    memory_pages: 2
+  - name: C4
+    burst: 50
+    priority: 5
+    memory_pages: 2

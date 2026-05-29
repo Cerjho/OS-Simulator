@@ -1,0 +1,40 @@
+workload_name: Priority Inversion & Starvation Workload
+seed: 123
+processes:
+  - name: LOW_PRI
+    burst: 25
+    priority: 1
+    memory_pages: 4
+    sync_requests:
+      - tick: 1
+        action: acquire
+        resource: SHARED_DB
+      - tick: 24
+        action: release
+        resource: SHARED_DB
+  - name: HIGH_PRI_1
+    burst: 10
+    priority: 9
+    memory_pages: 2
+    sync_requests:
+      - tick: 3
+        action: acquire
+        resource: SHARED_DB
+      - tick: 9
+        action: release
+        resource: SHARED_DB
+  - name: HIGH_PRI_2
+    burst: 12
+    priority: 8
+    memory_pages: 2
+    sync_requests:
+      - tick: 5
+        action: acquire
+        resource: SHARED_DB
+      - tick: 11
+        action: release
+        resource: SHARED_DB
+  - name: MED_PRI_NOISE
+    burst: 30
+    priority: 5
+    memory_pages: 3
