@@ -413,6 +413,22 @@ class Kernel:
                     if req.get("tick") == pre_pc and req.get("action") == "release":
                         self.sync_manager.process_request(pcb.pid, "release", req.get("resource"), tick)
 
+            # Feature: Simulate realistic memory access during execution with locality
+            if self.memory_manager and self.process_manager.running and running_pid is not None:
+                pcb = self.process_manager.running
+                if pcb.memory_pages > 0:
+                    if pcb.last_accessed_page is None:
+                        pcb.last_accessed_page = 0
+                    
+                    # 20% chance to jump to next page (simulating sequential scan), 80% spatial locality
+                    pseudo_rand = (tick * 17 + pcb.pid * 31) % 100
+                    if pseudo_rand < 20:
+                        pcb.last_accessed_page = (pcb.last_accessed_page + 1) % pcb.memory_pages
+                    
+                    frame = self.memory_manager.translate(pcb.pid, pcb.last_accessed_page, tick)
+                    if frame is None:
+                        self.memory_manager.handle_page_fault_direct(pcb.pid, pcb.last_accessed_page, tick)
+
             self.process_manager.execute_tick(tick)
 
             # BUG-01 fix: Use post-execute program_counter for acquire requests.
@@ -436,25 +452,37 @@ class Kernel:
         if self.sync_manager:
             self.sync_manager.tick(tick)
         # Step 8: Deadlock detection (runs every detection_interval ticks)
-        if self.deadlock_detector and tick > 0 and tick % self.config.deadlock.detection_interval == 0:
-            self.deadlock_detector.tick(tick)
-            cycles = self.deadlock_detector.detect()
-            if cycles:
-                affected_pids = self.deadlock_detector.recover(cycles, self.config.deadlock.recovery_strategy)
-                # BUG-05 fix: Actually terminate victim processes after deadlock recovery
-                if affected_pids and self.process_manager:
-                    for victim_pid in affected_pids:
-                        victim_pcb = next(
-                            (p for p in self.process_manager.get_all_processes()
-                             if p.pid == victim_pid and p.state == ProcessState.BLOCKED),
-                            None
-                        )
-                        if victim_pcb:
-                            try:
-                                self.process_manager.unblock(victim_pcb, tick)
-                                self.process_manager.terminate(victim_pcb, tick)
-                            except Exception:
-                                pass  # Process may already be in a terminal state
+        if self.deadlock_detector and tick > 0:
+            # Process delayed deadlock recovery if a cycle was previously detected
+            if getattr(self, "_deadlock_recovery_countdown", 0) > 0:
+                self._deadlock_recovery_countdown -= 1
+                if self._deadlock_recovery_countdown == 0 and getattr(self, "_pending_deadlock_cycles", None):
+                    affected_pids = self.deadlock_detector.recover(self._pending_deadlock_cycles, self.config.deadlock.recovery_strategy)
+                    if affected_pids and self.process_manager:
+                        for victim_pid in affected_pids:
+                            victim_pcb = next(
+                                (p for p in self.process_manager.get_all_processes()
+                                 if p.pid == victim_pid and p.state == ProcessState.BLOCKED),
+                                None
+                            )
+                            if victim_pcb:
+                                try:
+                                    self.process_manager.unblock(victim_pcb, tick)
+                                    self.process_manager.terminate(victim_pcb, tick)
+                                except Exception:
+                                    pass
+                    self._pending_deadlock_cycles = []
+
+            # Standard detection runs on intervals
+            if tick % self.config.deadlock.detection_interval == 0:
+                self.deadlock_detector.tick(tick)
+                cycles = self.deadlock_detector.detect()
+                if cycles:
+                    # Delay recovery by 3 ticks (typically ~1.5 - 3 seconds) 
+                    # so the deadlock state is broadcasted to the dashboard UI and visibly renders.
+                    if self.config.deadlock.recovery_strategy != "none" and getattr(self, "_deadlock_recovery_countdown", 0) == 0:
+                        self._deadlock_recovery_countdown = 3
+                        self._pending_deadlock_cycles = cycles
         # Step 9: Collect metrics snapshot
         if self.metrics_collector:
             self.metrics_collector.tick(tick)

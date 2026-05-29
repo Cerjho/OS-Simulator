@@ -51,3 +51,5 @@ site/
 
 # Miscellaneous
 .playwright-mcp/
+.os_sim_initialized
+simulation.yaml.bak

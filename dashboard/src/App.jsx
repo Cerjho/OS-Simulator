@@ -6,6 +6,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 
 // Internal subsystem interface components
 import ControlPanel from './components/ControlPanel';
+import ConfigPanel from './components/ConfigPanel';
 import ProcessTable from './components/ProcessTable';
 import GanttChart from './components/GanttChart';
 import MemoryMap from './components/MemoryMap';
@@ -13,6 +14,135 @@ import MetricsHistory from './components/MetricsHistory';
 import RAGGraph from './components/RAGGraph';
 import DiskSeekTrace from './components/DiskSeekTrace';
 
+// ── Tab Button Component ────────────────────────────────────────────────────
+function TabButton({ label, icon, isActive, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+        isActive
+          ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm shadow-indigo-950'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+      }`}
+    >
+      <span className="text-sm">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+// ── Monitor Panel (read-only live config summary) ───────────────────────────
+function MonitorPanel({ state }) {
+  const config = state?.config || {};
+  const cpu = state?.cpu || {};
+  const deadlock = state?.deadlock || {};
+  const memory = state?.memory || {};
+  const disk = state?.disk || {};
+  const processes = state?.processes || [];
+
+  const runningCount = processes.filter((p) => p.state === 'RUNNING').length;
+  const readyCount = processes.filter((p) => p.state === 'READY').length;
+  const blockedCount = processes.filter((p) => p.state === 'BLOCKED').length;
+  const terminatedCount = processes.filter((p) => p.state === 'TERMINATED').length;
+
+  const MetricRow = ({ label, value, accent }) => (
+    <div className="flex justify-between items-center py-1 border-b border-slate-800/40 last:border-0">
+      <span className="text-[10px] text-slate-500">{label}</span>
+      <span className={`text-xs font-mono font-bold ${accent || 'text-slate-200'}`}>
+        {value}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-xl border border-slate-800 shadow-2xl flex flex-col h-full min-h-0 overflow-y-auto space-y-3">
+      <h3 className="text-sm font-semibold text-slate-300 tracking-wider uppercase">
+        Live System Monitor
+      </h3>
+
+      {/* Process state breakdown */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          Process States
+        </span>
+        <div className="grid grid-cols-4 gap-1.5 text-center">
+          <div className="bg-emerald-500/10 rounded px-1 py-1.5 border border-emerald-500/20">
+            <span className="text-lg font-bold text-emerald-400 block">{runningCount}</span>
+            <span className="text-[9px] text-emerald-500/80 uppercase">Run</span>
+          </div>
+          <div className="bg-sky-500/10 rounded px-1 py-1.5 border border-sky-500/20">
+            <span className="text-lg font-bold text-sky-400 block">{readyCount}</span>
+            <span className="text-[9px] text-sky-500/80 uppercase">Ready</span>
+          </div>
+          <div className="bg-amber-500/10 rounded px-1 py-1.5 border border-amber-500/20">
+            <span className="text-lg font-bold text-amber-400 block">{blockedCount}</span>
+            <span className="text-[9px] text-amber-500/80 uppercase">Block</span>
+          </div>
+          <div className="bg-slate-500/10 rounded px-1 py-1.5 border border-slate-600/20">
+            <span className="text-lg font-bold text-slate-400 block">{terminatedCount}</span>
+            <span className="text-[9px] text-slate-500/80 uppercase">Done</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Algorithms */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          Active Algorithms
+        </span>
+        <MetricRow label="CPU Scheduler" value={config?.scheduler?.algorithm || '—'} accent="text-indigo-400" />
+        <MetricRow label="Page Replacement" value={config?.memory?.algorithm || '—'} accent="text-violet-400" />
+        <MetricRow label="Disk Scheduling" value={config?.disk?.scheduling || '—'} accent="text-cyan-400" />
+      </div>
+
+      {/* CPU */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          CPU Telemetry
+        </span>
+        <MetricRow label="Utilization" value={`${((cpu.utilization || 0) * 100).toFixed(1)}%`} accent="text-emerald-400" />
+        <MetricRow label="Running PID" value={cpu.running_pid ?? 'idle'} />
+        <MetricRow label="Context Switches" value={cpu.context_switches ?? 0} />
+      </div>
+
+      {/* Memory */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          Memory Telemetry
+        </span>
+        <MetricRow label="Utilization" value={`${((memory.utilization || 0) * 100).toFixed(1)}%`} accent="text-violet-400" />
+        <MetricRow label="Page Faults" value={memory.page_fault_count ?? 0} />
+        <MetricRow label="Fault Rate" value={(memory.page_fault_rate || 0).toFixed(3)} />
+        <MetricRow label="Frames Used" value={`${memory.used_frames ?? 0} / ${memory.total_frames ?? 64}`} />
+      </div>
+
+      {/* Disk */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          Disk I/O
+        </span>
+        <MetricRow label="Head Position" value={disk.current_head ?? 53} />
+        <MetricRow label="Total Seek Distance" value={disk.total_seek_distance ?? 0} />
+        <MetricRow label="Pending Requests" value={disk.pending_count ?? 0} />
+      </div>
+
+      {/* Deadlock */}
+      <div className="p-2.5 bg-slate-950/50 rounded-lg border border-slate-800/50">
+        <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
+          Deadlock Status
+        </span>
+        <MetricRow
+          label="Detected"
+          value={deadlock.detected ? 'YES' : 'No'}
+          accent={deadlock.detected ? 'text-red-400' : 'text-emerald-400'}
+        />
+        <MetricRow label="Active Cycles" value={deadlock.cycles?.length ?? 0} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ────────────────────────────────────────────────────────────────
 export default function App() {
   const apiBaseUrl = useMemo(() => {
     const configuredBase = import.meta.env.VITE_API_BASE_URL?.trim();
@@ -49,6 +179,9 @@ export default function App() {
   // Maintain Section 17.2 metrics telemetry histories arrays cleanly
   const [metricsHistory, setMetricsHistory] = useState([]);
 
+  // Active tab state for left column
+  const [activeTab, setActiveTab] = useState('controls');
+
   // Extract canonical simulation state variables safely
   const currentTick = state?.tick || 0;
   const isPaused = state?.clock?.paused || false;
@@ -57,16 +190,6 @@ export default function App() {
   const memoryState = state?.memory || {};
   const diskState = state?.disk || {};
   const deadlockState = state?.deadlock || {};
-
-  // Extract underlying configuration algorithm tokens safely
-  const activeAlgorithms = useMemo(() => {
-    // Attempt extracting from configuration snapshot payload attributes if available
-    return {
-      cpu: state?.config?.scheduler?.algorithm || 'round_robin',
-      memory: state?.config?.memory?.algorithm || 'lru',
-      disk: state?.config?.disk?.scheduling || 'sstf',
-    };
-  }, [state]);
 
   // Aggregate detected cycle process array slices to resolve deadlocked entity status flags
   const deadlockedPids = useMemo(() => {
@@ -134,18 +257,9 @@ export default function App() {
     }).catch((err) => console.error('[Control API] Process Injection error:', err));
   }, [buildApiUrl]);
 
-  const handleUpdateConfig = useCallback((partialConfigPayload) => {
-    fetch(buildApiUrl('/api/config'), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(partialConfigPayload),
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(`Config update failed with status ${res.status}`);
-        reconnect();
-      })
-      .catch((err) => console.error('[Config API] Partial update error:', err));
-  }, [buildApiUrl, reconnect]);
+  const handleUpdateConfig = useCallback(() => {
+    reconnect();
+  }, [reconnect]);
 
   const handleRunExperiment = useCallback((presetNameStr) => {
     fetch(buildApiUrl('/api/experiments/run'), {
@@ -210,24 +324,67 @@ export default function App() {
       <main className="flex flex-col space-y-4">
         {/* Upper Two-Column Dashboard Layout Section */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Left Column: Direct Hardware Control Panel & Active Thread Table */}
+          {/* Left Column: Tabbed Control Center + Process Table */}
           <div className="lg:col-span-4 flex flex-col space-y-4 h-[920px]">
-            <div className="h-2/5 min-h-[360px]">
-              <ControlPanel
-                isConnected={isConnected}
-                isPaused={isPaused}
-                activeAlgorithms={activeAlgorithms}
-                buildApiUrl={buildApiUrl}
-                onStart={handleStart}
-                onStop={handleStop}
-                onPauseResume={handlePauseResume}
-                onStep={handleStep}
-                onInjectProcess={handleInjectProcess}
-                onUpdateConfig={handleUpdateConfig}
-                onRunExperiment={handleRunExperiment}
+            {/* Tab Bar */}
+            <div className="flex gap-1 bg-slate-900/40 p-1 rounded-lg border border-slate-800/50">
+              <TabButton
+                label="Controls"
+                icon="🎮"
+                isActive={activeTab === 'controls'}
+                onClick={() => setActiveTab('controls')}
+              />
+              <TabButton
+                label="Config"
+                icon="⚙️"
+                isActive={activeTab === 'config'}
+                onClick={() => setActiveTab('config')}
+              />
+              <TabButton
+                label="Monitor"
+                icon="📊"
+                isActive={activeTab === 'config_monitor'}
+                onClick={() => setActiveTab('config_monitor')}
               />
             </div>
-            <div className="h-3/5 flex-1 overflow-hidden">
+
+            {/* Active Tab Content */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {activeTab === 'controls' && (
+                <div className="h-full flex flex-col space-y-4">
+                  <div className="flex-1 min-h-0">
+                    <ControlPanel
+                      isConnected={isConnected}
+                      isPaused={isPaused}
+                      buildApiUrl={buildApiUrl}
+                      onStart={handleStart}
+                      onStop={handleStop}
+                      onPauseResume={handlePauseResume}
+                      onStep={handleStep}
+                      onInjectProcess={handleInjectProcess}
+                      onRunExperiment={handleRunExperiment}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'config' && (
+                <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-xl border border-slate-800 shadow-2xl h-full">
+                  <ConfigPanel
+                    buildApiUrl={buildApiUrl}
+                    onUpdateConfig={handleUpdateConfig}
+                    isConnected={isConnected}
+                  />
+                </div>
+              )}
+
+              {activeTab === 'config_monitor' && (
+                <MonitorPanel state={state} />
+              )}
+            </div>
+
+            {/* Process Table — always visible below tabs */}
+            <div className="h-[320px] flex-shrink-0 overflow-hidden">
               <ProcessTable processes={processes} />
             </div>
           </div>

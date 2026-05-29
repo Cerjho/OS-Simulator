@@ -87,7 +87,7 @@ class SimConfig:
     VALID_PAGE_ALGORITHMS = {"fifo", "lru", "optimal", "clock"}
     VALID_FS_TYPES = {"fat", "inode"}
     VALID_DISK_ALGORITHMS = {"fcfs", "sstf", "scan", "c-scan", "look", "c-look"}
-    VALID_RECOVERY_STRATEGIES = {"terminate_youngest", "terminate_lowest", "resource_preempt"}
+    VALID_RECOVERY_STRATEGIES = {"terminate_youngest", "terminate_lowest", "resource_preempt", "none"}
 
     def validate(self) -> list[str]:
         """Returns list of error strings. Empty list = valid."""

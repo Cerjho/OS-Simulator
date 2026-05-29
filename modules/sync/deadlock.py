@@ -154,9 +154,12 @@ class DeadlockDetector:
     def recover(self, cycles: list[list[int]], strategy: str) -> list[int]:
         """
         Execute recovery strategy over identified deadlock cycles.
-        Supported strategies: 'terminate_youngest', 'terminate_lowest', 'resource_preempt'.
+        Supported strategies: 'terminate_youngest', 'terminate_lowest', 'resource_preempt', 'none'.
         Returns list of affected PIDs.
         """
+        if strategy == "none":
+            return []
+
         affected_pids: set[int] = set()
 
         for cycle in cycles:

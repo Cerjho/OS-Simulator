@@ -6,7 +6,7 @@ cpu:
   context_switch_cost: 2
   cores: 1
 deadlock:
-  detection_interval: 10
+  detection_interval: 1
   recovery_strategy: terminate_youngest
 disk:
   cylinders: 200
@@ -28,11 +28,11 @@ memory:
   tlb_size: 16
   total_frames: 64
 processes:
-  auto_spawn: true
-  initial_load: 5
+  auto_spawn: false
+  initial_load: 0
   spawn_interval_ticks: 20
 scheduler:
   aging_interval: 50
   algorithm: round_robin
   preemptive: true
-  time_quantum: 4
+  time_quantum: 2

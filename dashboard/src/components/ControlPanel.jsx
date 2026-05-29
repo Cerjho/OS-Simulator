@@ -1,6 +1,8 @@
 // dashboard/src/components/ControlPanel.jsx
 // Phase: 8 — Visualization & Dashboard
 // Owner: Dashboard Agent
+// Refactored: Algorithm config dropdowns moved to ConfigPanel. This component
+// now focuses on runtime operations: lifecycle, process injection, and experiments.
 import React, { useState, useEffect } from 'react';
 
 const DEFAULT_EXPERIMENT_PRESETS = [
@@ -13,14 +15,12 @@ const DEFAULT_EXPERIMENT_PRESETS = [
 export default function ControlPanel({
   isConnected = false,
   isPaused = false,
-  activeAlgorithms = {},
   buildApiUrl = (path) => path,
   onStart,
   onStop,
   onPauseResume,
   onStep,
   onInjectProcess,
-  onUpdateConfig,
   onRunExperiment,
 }) {
   // Localized process injection state footprint
@@ -31,20 +31,13 @@ export default function ControlPanel({
     memory_pages: 4,
   });
 
-  // Localized hardware configuration parameter selections
-  const [selectedCpuAlgo, setSelectedCpuAlgo] = useState('round_robin');
-  const [selectedMemAlgo, setSelectedMemAlgo] = useState('lru');
-  const [selectedDiskAlgo, setSelectedDiskAlgo] = useState('sstf');
-
   // Discovered experiment preset scripts cache
   const [experimentPresets, setExperimentPresets] = useState([]);
 
-  // Sync active parameters cleanly if modified externally
-  useEffect(() => {
-    if (activeAlgorithms?.cpu) setSelectedCpuAlgo(activeAlgorithms.cpu);
-    if (activeAlgorithms?.memory) setSelectedMemAlgo(activeAlgorithms.memory);
-    if (activeAlgorithms?.disk) setSelectedDiskAlgo(activeAlgorithms.disk);
-  }, [activeAlgorithms]);
+  // Experiment detail preview state
+  const [previewData, setPreviewData] = useState(null);
+  const [previewName, setPreviewName] = useState(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   // Discover and populate profile preset workload scripts via Config API endpoints dynamically
   useEffect(() => {
@@ -94,19 +87,29 @@ export default function ControlPanel({
     };
   }, [buildApiUrl]);
 
-  // Handle configuration modifications mapping partial PUT request payloads
-  const handleConfigChange = (section, key, value) => {
-    if (section === 'cpu') setSelectedCpuAlgo(value);
-    if (section === 'memory') setSelectedMemAlgo(value);
-    if (section === 'disk') setSelectedDiskAlgo(value);
+  // Fetch experiment detail for preview
+  const handlePreviewToggle = async (presetName) => {
+    if (previewName === presetName) {
+      // Toggle off
+      setPreviewName(null);
+      setPreviewData(null);
+      return;
+    }
 
-    if (onUpdateConfig) {
-      // Map schema layout exactly matching expected API models
-      let payload = {};
-      if (section === 'cpu') payload = { scheduler: { algorithm: value } };
-      if (section === 'memory') payload = { memory: { algorithm: value } };
-      if (section === 'disk') payload = { disk: { scheduling: value } };
-      onUpdateConfig(payload);
+    setPreviewName(presetName);
+    setLoadingPreview(true);
+    setPreviewData(null);
+
+    try {
+      const res = await fetch(buildApiUrl(`/api/experiments/${presetName}`));
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewData(data);
+      }
+    } catch (err) {
+      console.error('[ControlPanel] Preview fetch error:', err);
+    } finally {
+      setLoadingPreview(false);
     }
   };
 
@@ -131,7 +134,7 @@ export default function ControlPanel({
       <div>
         <div className="flex justify-between items-center mb-2.5">
           <h3 className="text-sm font-semibold text-slate-300 tracking-wider uppercase">
-            Master Simulation Lifecycle Controls
+            Simulation Controls
           </h3>
           <span className="flex items-center space-x-1.5">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
@@ -173,64 +176,10 @@ export default function ControlPanel({
         </div>
       </div>
 
-      {/* Hardware Parameter Dropdown Configuration Tier */}
-      <div className="pt-3 border-t border-slate-800">
-        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-          Subsystem Operational Algorithm Policies
-        </h4>
-        <div className="space-y-2.5 text-xs">
-          <div>
-            <label className="block text-[11px] text-slate-500 mb-1">CPU Scheduling Algorithm</label>
-            <select
-              value={selectedCpuAlgo}
-              onChange={(e) => handleConfigChange('cpu', 'algorithm', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-            >
-              <option value="fcfs">FCFS (First-Come First-Served)</option>
-              <option value="sjf">SJF (Shortest Job First)</option>
-              <option value="srtf">SRTF (Shortest Remaining Time)</option>
-              <option value="priority">Priority Tier Scheduling</option>
-              <option value="round_robin">Round Robin (RR)</option>
-              <option value="mlfq">MLFQ (Multi-Level Feedback)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Page Replacement Policy</label>
-            <select
-              value={selectedMemAlgo}
-              onChange={(e) => handleConfigChange('memory', 'algorithm', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-            >
-              <option value="fifo">FIFO (First-In First-Out)</option>
-              <option value="lru">LRU (Least Recently Used)</option>
-              <option value="clock">Clock Second Chance</option>
-              <option value="optimal">Optimal Strategy</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] text-slate-500 mb-1">Disk Arm Scheduling Engine</label>
-            <select
-              value={selectedDiskAlgo}
-              onChange={(e) => handleConfigChange('disk', 'scheduling', e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-            >
-              <option value="fcfs">FCFS Seek</option>
-              <option value="sstf">SSTF (Shortest Seek Time)</option>
-              <option value="scan">SCAN Elevator Track</option>
-              <option value="c-scan">C-SCAN Circular Elevator</option>
-              <option value="look">LOOK Engine</option>
-              <option value="c-look">C-LOOK Sweep</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
       {/* Dynamic Subsystem Process Injection Form Block */}
       <div className="pt-3 border-t border-slate-800">
         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-          Runtime Process Workload Injection
+          Runtime Process Injection
         </h4>
         <form onSubmit={handleInjectSubmit} className="space-y-2 text-xs">
           <div className="grid grid-cols-2 gap-2">
@@ -293,27 +242,114 @@ export default function ControlPanel({
       </div>
 
       {/* Preset Evaluation Workload Scripts Selectors */}
-      <div className="pt-3 border-t border-slate-800 flex-1 flex flex-col">
+      <div className="pt-3 border-t border-slate-800 flex-1 flex flex-col min-h-0">
         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
           Evaluation Preset Workloads
         </h4>
-        <div className="grid grid-cols-2 gap-2 flex-1 auto-rows-max overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 gap-2 auto-rows-max overflow-y-auto pr-1">
           {experimentPresets.map((preset) => (
-            <button
-              key={preset.name}
-              onClick={() => onRunExperiment && onRunExperiment(preset.name)}
-              className="text-left bg-slate-950 hover:bg-slate-800/80 p-2 rounded-lg border border-slate-800/80 transition-all active:scale-95 flex flex-col justify-between"
-              title={preset.description}
-            >
-              <span className="font-mono text-xs font-bold text-slate-200 block truncate">
-                {preset.name}
-              </span>
-              <span className="text-[10px] text-slate-500 block line-clamp-2 leading-tight mt-1">
-                {preset.description}
-              </span>
-            </button>
+            <div key={preset.name} className="flex flex-col">
+              <button
+                onClick={() => handlePreviewToggle(preset.name)}
+                className={`text-left p-2 rounded-lg border transition-all active:scale-95 flex flex-col justify-between ${
+                  previewName === preset.name
+                    ? 'bg-indigo-950/40 border-indigo-500/40'
+                    : 'bg-slate-950 hover:bg-slate-800/80 border-slate-800/80'
+                }`}
+                title={preset.description}
+              >
+                <span className="font-mono text-xs font-bold text-slate-200 block truncate">
+                  {preset.name}
+                </span>
+                <span className="text-[10px] text-slate-500 block line-clamp-2 leading-tight mt-1">
+                  {preset.description}
+                </span>
+              </button>
+            </div>
           ))}
         </div>
+
+        {/* Experiment Preview Popover */}
+        {previewName && (
+          <div className="mt-2 p-2.5 bg-slate-950/80 border border-slate-700/60 rounded-lg animate-fadeIn">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">
+                {previewName} — Preview
+              </span>
+              <button
+                onClick={() => { setPreviewName(null); setPreviewData(null); }}
+                className="text-[10px] text-slate-500 hover:text-slate-300"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingPreview && (
+              <span className="text-[10px] text-slate-500 animate-pulse">Loading…</span>
+            )}
+
+            {previewData && (
+              <div className="space-y-1.5 text-[10px]">
+                <div className="text-slate-400">
+                  <span className="text-slate-500 font-semibold">Workload: </span>
+                  {previewData.workload_name}
+                </div>
+
+                {/* Config overrides */}
+                {(previewData.scheduler || previewData.deadlock || previewData.processes_config) && (
+                  <div className="space-y-0.5">
+                    <span className="text-slate-500 font-semibold block">Config Overrides:</span>
+                    {previewData.scheduler && (
+                      <div className="text-slate-400 pl-2 font-mono">
+                        scheduler: {JSON.stringify(previewData.scheduler)}
+                      </div>
+                    )}
+                    {previewData.deadlock && (
+                      <div className="text-slate-400 pl-2 font-mono">
+                        deadlock: {JSON.stringify(previewData.deadlock)}
+                      </div>
+                    )}
+                    {previewData.processes_config && (
+                      <div className="text-slate-400 pl-2 font-mono">
+                        processes: {JSON.stringify(previewData.processes_config)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Process list */}
+                {previewData.processes && previewData.processes.length > 0 && (
+                  <div>
+                    <span className="text-slate-500 font-semibold block mb-0.5">
+                      Processes ({previewData.processes.length}):
+                    </span>
+                    <div className="max-h-24 overflow-y-auto space-y-0.5">
+                      {previewData.processes.map((p, i) => (
+                        <div key={i} className="flex gap-2 text-slate-400 font-mono pl-2">
+                          <span className="text-indigo-400 font-bold">{p.name}</span>
+                          <span>b={p.burst}</span>
+                          <span>p={p.priority}</span>
+                          <span>m={p.memory_pages}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => {
+                    onRunExperiment && onRunExperiment(previewName);
+                    setPreviewName(null);
+                    setPreviewData(null);
+                  }}
+                  className="w-full mt-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-1.5 px-3 rounded text-[10px] transition-all active:scale-95 shadow-lg shadow-indigo-950"
+                >
+                  ▶ Run {previewName}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -122,6 +122,7 @@ class PCB:
     memory_base:      int = 0
     memory_limit:     int = 0
     page_table:       list[PageEntry] = field(default_factory=list)
+    last_accessed_page: int | None = None
 
     # ── I/O and Sync ──────────────────────────────────────────────────────────
     io_requests:      list[IORequest] = field(default_factory=list)

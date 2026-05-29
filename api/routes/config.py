@@ -91,23 +91,83 @@ async def update_configuration(partial_update: dict[str, Any]) -> dict[str, Any]
     # Persist serialized update block to underlying configuration file
     target_file.write_text(yaml.dump(current_raw))
 
-    # Restart Kernel backend state cleanly to apply hardware parameter modifications
+    # Sync matching configurations to all preset workload files so the dashboard is the ultimate source of truth
+    try:
+        workloads_dir = Path("experiments/workloads")
+        if workloads_dir.exists():
+            for wl_file in workloads_dir.glob("*.yaml"):
+                try:
+                    wl_data = yaml.safe_load(wl_file.read_text()) or {}
+                    wl_modified = False
+                    
+                    # Map workload section keys to global section keys
+                    sections_map = {
+                        "scheduler": "scheduler",
+                        "deadlock": "deadlock",
+                        "processes_config": "processes"
+                    }
+                    
+                    for wl_sec, global_sec in sections_map.items():
+                        if wl_sec in wl_data and global_sec in current_raw:
+                            # Update only the keys that the workload explicitly defines
+                            for k in list(wl_data[wl_sec].keys()):
+                                if k in current_raw[global_sec]:
+                                    wl_data[wl_sec][k] = current_raw[global_sec][k]
+                                    wl_modified = True
+                    
+                    if wl_modified:
+                        wl_file.write_text(yaml.dump(wl_data, sort_keys=False))
+                except Exception as e:
+                    print(f"[Config API] Failed to sync workload {wl_file.name}: {e}")
+    except Exception as e:
+        print(f"[Config API] Workload sync failed: {e}")
+
+    # Smart Kernel Restart/Hot-Reload logic
     if deps.kernel_instance:
-        deps.kernel_instance.stop()
+        old_cfg = deps.kernel_instance.config
+        # Check if any structural hardware parameters changed that require a full restart
+        structural_changed = (
+            old_cfg.memory != new_cfg.memory or
+            old_cfg.disk != new_cfg.disk or
+            old_cfg.filesystem != new_cfg.filesystem or
+            old_cfg.cpu != new_cfg.cpu
+        )
 
-    fresh_kernel = Kernel(str(target_file))
-    deps.kernel_instance = fresh_kernel
+        if structural_changed:
+            deps.kernel_instance.stop()
+            fresh_kernel = Kernel(str(target_file))
+            deps.kernel_instance = fresh_kernel
+            async def _start_kernel_safe() -> None:
+                try:
+                    await fresh_kernel.start()
+                except Exception as exc:
+                    print(f"[Config API] Kernel restart failed: {exc}")
+            import asyncio
+            asyncio.create_task(_start_kernel_safe())
+            
+            return {"status": "config_updated_kernel_restarted", "config": current_raw}
+        else:
+            # Hot-reload the parameters in-place so active workloads are not interrupted
+            old_cfg.clock.tick_rate_ms = new_cfg.clock.tick_rate_ms
+            old_cfg.clock.max_ticks = new_cfg.clock.max_ticks
+            old_cfg.clock.auto_start = new_cfg.clock.auto_start
+            
+            old_cfg.scheduler.algorithm = new_cfg.scheduler.algorithm
+            old_cfg.scheduler.time_quantum = new_cfg.scheduler.time_quantum
+            old_cfg.scheduler.preemptive = new_cfg.scheduler.preemptive
+            old_cfg.scheduler.aging_interval = new_cfg.scheduler.aging_interval
+            
+            old_cfg.deadlock.detection_interval = new_cfg.deadlock.detection_interval
+            old_cfg.deadlock.recovery_strategy = new_cfg.deadlock.recovery_strategy
+            
+            old_cfg.processes.initial_load = new_cfg.processes.initial_load
+            old_cfg.processes.auto_spawn = new_cfg.processes.auto_spawn
+            old_cfg.processes.spawn_interval_ticks = new_cfg.processes.spawn_interval_ticks
+            
+            old_cfg.logging.level = new_cfg.logging.level
+            old_cfg.logging.log_to_file = new_cfg.logging.log_to_file
 
-    async def _start_kernel_safe() -> None:
-        try:
-            await fresh_kernel.start()
-        except Exception as exc:
-            print(f"[Config API] Kernel restart failed: {exc}")
-
-    asyncio.create_task(_start_kernel_safe())
-    await asyncio.sleep(0.05)
-
-    return {"status": "config_updated_kernel_restarted", "config": current_raw}
+            return {"status": "config_updated_hot_reloaded", "config": current_raw}
 
 
 @router.get("/experiments")
@@ -140,6 +200,29 @@ async def list_experiment_presets() -> list[dict[str, Any]]:
     return discovered_profiles
 
 
+@router.get("/experiments/{name}")
+async def get_experiment_detail(name: str) -> dict[str, Any]:
+    """Return full parsed YAML content for a specific workload preset including processes and config overrides."""
+    workload_file = Path(f"experiments/workloads/{name}.yaml")
+    if not workload_file.exists():
+        raise HTTPException(status_code=404, detail=f"Workload '{name}' not found")
+
+    try:
+        parsed = yaml.safe_load(workload_file.read_text()) or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse workload: {e}")
+
+    return {
+        "name": name,
+        "workload_name": parsed.get("workload_name", name),
+        "seed": parsed.get("seed"),
+        "scheduler": parsed.get("scheduler"),
+        "processes_config": parsed.get("processes_config"),
+        "deadlock": parsed.get("deadlock"),
+        "processes": parsed.get("processes", []),
+    }
+
+
 @router.post("/experiments/run")
 async def run_experiment_preset(payload: RunExperimentRequest) -> dict[str, Any]:
     """Load workload process specifications and initialize clean tracking execution run."""
@@ -165,14 +248,33 @@ async def run_experiment_preset(payload: RunExperimentRequest) -> dict[str, Any]
     new_kernel = Kernel("simulation.yaml")
 
     # BUG-13 fix: Apply config overrides BEFORE _init_subsystems so they take effect
+    # AND persist them to simulation.yaml so the Dashboard Config tab stays in sync!
     try:
+        target_file = Path("simulation.yaml")
+        current_raw: dict[str, Any] = {}
+        if target_file.exists():
+            current_raw = yaml.safe_load(target_file.read_text()) or {}
+
         if "scheduler" in parsed_workload:
+            if "scheduler" not in current_raw: current_raw["scheduler"] = {}
             for k, v in parsed_workload["scheduler"].items():
                 setattr(new_kernel.config.scheduler, k, v)
+                current_raw["scheduler"][k] = v
 
         if "processes_config" in parsed_workload:
+            if "processes" not in current_raw: current_raw["processes"] = {}
             for k, v in parsed_workload["processes_config"].items():
                 setattr(new_kernel.config.processes, k, v)
+                current_raw["processes"][k] = v
+
+        if "deadlock" in parsed_workload:
+            if "deadlock" not in current_raw: current_raw["deadlock"] = {}
+            for k, v in parsed_workload["deadlock"].items():
+                setattr(new_kernel.config.deadlock, k, v)
+                current_raw["deadlock"][k] = v
+                
+        # Persist updated config back to file so /api/config serves the synced state
+        target_file.write_text(yaml.dump(current_raw))
     except Exception as exc:
         print(f"[Experiment API] Config override failed: {exc}")
 
