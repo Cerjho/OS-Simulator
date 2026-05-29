@@ -163,7 +163,7 @@ class Kernel:
             raise RuntimeError("Cannot inject process before simulation is started. Call start() or step() first.")
         return self.process_manager.create_process(
             name=spec["name"],
-            burst_time=spec["burst"],
+            burst_time=spec.get("burst", spec.get("burst_time", 10)),
             priority=spec.get("priority", 5),
             memory_pages=spec.get("memory_pages", 4),
             arrival_time=spec.get("arrival_time", self.clock.tick_count),
@@ -271,7 +271,7 @@ class Kernel:
             return
 
         for pcb in self.process_manager.terminated:
-            if pcb.pid not in self._freed_pids:
+            if pcb.state == ProcessState.TERMINATED and pcb.pid not in self._freed_pids:
                 self._free_process_memory(pcb.pid)
                 self._freed_pids.add(pcb.pid)
 
@@ -338,6 +338,7 @@ class Kernel:
                 "pid": p.pid, "name": p.name, "state": p.state.value,
                 "priority": p.priority, "remaining_burst": p.remaining_burst,
                 "waiting_time": p.waiting_time, "turnaround_time": p.turnaround_time,
+                "parent_pid": p.parent_pid,
             }
             for p in self.process_manager.get_all_processes()
         ]
@@ -472,7 +473,23 @@ class Kernel:
                     current_pc = pcb.program_counter  # post-increment value
                     for req in pcb.sync_requests:
                         if req.get("tick") == current_pc and req.get("action") != "release":
-                            self.sync_manager.process_request(pcb.pid, req.get("action"), req.get("resource"), tick)
+                            action = req.get("action")
+                            if action == "fork":
+                                self.interrupt_controller.raise_interrupt(
+                                    interrupt_type=InterruptType.SYSCALL, 
+                                    pid=pcb.pid, 
+                                    data={"type": "FORK", **req},
+                                    current_tick=tick
+                                )
+                            elif action == "wait":
+                                self.interrupt_controller.raise_interrupt(
+                                    interrupt_type=InterruptType.SYSCALL, 
+                                    pid=pcb.pid, 
+                                    data={"type": "WAIT"},
+                                    current_tick=tick
+                                )
+                            else:
+                                self.sync_manager.process_request(pcb.pid, action, req.get("resource"), tick)
         # Step 4.5: Free memory for terminated processes and cap terminated list
         self._cleanup_terminated_processes(tick)
         # Step 5: Memory manager handles any deferred work

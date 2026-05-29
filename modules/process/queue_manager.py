@@ -228,19 +228,35 @@ class QueueManager:
 
     def terminate(self, pcb: PCB, tick: int) -> None:
         """
-        RUNNING → TERMINATED.
+        RUNNING → ZOMBIE (if parent alive) or TERMINATED.
         Release all held resources.
         Publish PROCESS_TERMINATED event.
         Append to self.terminated.
         Close GanttEntry.
         """
-        pcb.transition_to(ProcessState.TERMINATED, tick=tick)
-
         # Close Gantt entry
         self._close_gantt_entry(pcb, tick)
-
+        
         if self.running is pcb:
             self.running = None
+
+        is_zombie = False
+        if pcb.parent_pid is not None:
+            # Find parent
+            parent = next((p for p in self.get_all_processes() if p.pid == pcb.parent_pid), None)
+            if parent and parent.state not in (ProcessState.TERMINATED, ProcessState.ZOMBIE):
+                if parent.state == ProcessState.WAITING:
+                    # Parent is waiting for us! Reap immediately and wake parent.
+                    pcb.transition_to(ProcessState.TERMINATED, tick)
+                    self.unblock(parent, tick)
+                else:
+                    # Parent is alive but not waiting. We become a ZOMBIE.
+                    pcb.transition_to(ProcessState.ZOMBIE, tick)
+                    is_zombie = True
+            else:
+                pcb.transition_to(ProcessState.TERMINATED, tick)
+        else:
+            pcb.transition_to(ProcessState.TERMINATED, tick)
 
         self.terminated.append(pcb)
 
@@ -252,6 +268,7 @@ class QueueManager:
                 "turnaround_time": pcb.turnaround_time,
                 "waiting_time": pcb.waiting_time,
                 "response_time": pcb.response_time,
+                "is_zombie": is_zombie,
             },
             tick=tick,
             source="queue_manager",
@@ -333,15 +350,18 @@ class QueueManager:
         elif syscall_type == "FORK":
             parent_pid = interrupt.pid
             child_name = interrupt.data.get("child_name", f"child_of_{parent_pid}")
-            child_burst = interrupt.data.get("burst_time", 5)
+            child_burst = interrupt.data.get("burst_time", interrupt.data.get("child_burst", 5))
             child_priority = interrupt.data.get("priority", 5)
             child_pages = interrupt.data.get("memory_pages", 4)
+            child_sync_requests = interrupt.data.get("child_sync_requests", [])
+            
             child_pid = self.create_process(
                 name=child_name,
                 burst_time=child_burst,
                 priority=child_priority,
                 memory_pages=child_pages,
                 arrival_time=tick,
+                sync_requests=child_sync_requests
             )
             # Auto-admit the child
             child_pcb = None
@@ -352,6 +372,44 @@ class QueueManager:
             if child_pcb:
                 child_pcb.parent_pid = parent_pid
                 self.admit(child_pcb)
+
+        elif syscall_type == "WAIT":
+            if self.running is not None and self.running.pid == interrupt.pid:
+                parent_pcb = self.running
+                
+                # 1. Check if there is already a ZOMBIE child
+                zombie_child = next(
+                    (p for p in self.terminated if p.parent_pid == parent_pcb.pid and p.state == ProcessState.ZOMBIE), 
+                    None
+                )
+                if zombie_child:
+                    # Reap it immediately, parent continues running
+                    zombie_child.transition_to(ProcessState.TERMINATED, tick)
+                else:
+                    # 2. Check if there are active children
+                    active_child = next(
+                        (p for p in self.get_all_processes() 
+                         if p.parent_pid == parent_pcb.pid and p.state not in (ProcessState.TERMINATED, ProcessState.ZOMBIE)), 
+                        None
+                    )
+                    if active_child:
+                        # 3. Put parent to WAITING
+                        parent_pcb.transition_to(ProcessState.WAITING, tick)
+                        parent_pcb.blocked_reason = "wait_child"
+                        
+                        self._close_gantt_entry(parent_pcb, tick)
+                        self.running = None
+                        
+                        if "wait_child" not in self.blocked:
+                            self.blocked["wait_child"] = []
+                        self.blocked["wait_child"].append(parent_pcb)
+                        
+                        self.event_bus.publish(
+                            "PROCESS_STATE_CHANGED",
+                            {"pid": parent_pcb.pid, "from": "running", "to": "waiting", "reason": "wait_child"},
+                            tick=tick,
+                            source="queue_manager",
+                        )
 
     # ── Query Methods ─────────────────────────────────────────────────────────
 

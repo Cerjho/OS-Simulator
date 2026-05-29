@@ -33,6 +33,7 @@ VALID_TRANSITIONS: dict[tuple[ProcessState, ProcessState], str] = {
     (ProcessState.RUNNING,    ProcessState.BLOCKED):    "io_request_or_wait_resource",
     (ProcessState.RUNNING,    ProcessState.WAITING):    "wait_child",
     (ProcessState.RUNNING,    ProcessState.TERMINATED): "exit_or_kill",
+    (ProcessState.RUNNING,    ProcessState.ZOMBIE):     "exit_but_parent_alive",
     (ProcessState.BLOCKED,    ProcessState.READY):      "io_complete_or_resource_available",
     (ProcessState.WAITING,    ProcessState.READY):      "child_terminated",
     (ProcessState.TERMINATED, ProcessState.ZOMBIE):     "parent_not_yet_notified",
@@ -163,6 +164,7 @@ class PCB:
         """Serializable snapshot for API/dashboard use."""
         return {
             "pid": self.pid,
+            "parent_pid": self.parent_pid,
             "name": self.name,
             "state": self.state.value,
             "priority": self.priority,
