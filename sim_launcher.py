@@ -115,9 +115,9 @@ def _banner(title: str) -> None:
     """Print a visible section banner."""
     width = 70
     print()
-    print("=" * width)
-    print(f"  {title}")
-    print("=" * width)
+    print(_dim("=" * width))
+    print(f"  {_bold(title)}")
+    print(_dim("=" * width))
     print()
 
 
@@ -767,11 +767,11 @@ def cmd_test(html: bool = False, full: bool = False) -> int:
         report.append("--cov-report=html:htmlcov")
 
     cmd = [PYTHON, "-m", "pytest", "tests/", "-v"] + cov_args + report
-    print(f"$ {' '.join(cmd)}\n")
+    print(f"  {_dim('$ ' + ' '.join(cmd))}\n")
     result = subprocess.run(cmd, cwd=str(ROOT_DIR))
 
     if html and result.returncode == 0:
-        print(f"\n📊 HTML coverage report: {ROOT_DIR / 'htmlcov' / 'index.html'}")
+        print(f"\n  {_green('📊')} HTML coverage report: {_cyan(str(ROOT_DIR / 'htmlcov' / 'index.html'))}")
 
     return result.returncode
 
@@ -782,14 +782,14 @@ def cmd_backend() -> subprocess.Popen:
 
     main_py = ROOT_DIR / "api" / "main.py"
     if not main_py.exists():
-        print(f"❌ {main_py} not found. Is this the right project root?")
+        print(f"  {_red('✘')} {main_py} not found. Is this the right project root?")
         sys.exit(1)
 
     cmd = [PYTHON, "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"]
-    print(f"$ {' '.join(cmd)}")
-    print("🌐 Backend: http://localhost:8000")
-    print("📡 WebSocket: ws://localhost:8000/ws/realtime")
-    print("📖 API Docs: http://localhost:8000/docs\n")
+    print(f"  {_dim('$ ' + ' '.join(cmd))}")
+    print(f"  {_cyan('🌐')} Backend:   {_cyan('http://localhost:8000')}")
+    print(f"  {_cyan('📡')} WebSocket: {_cyan('ws://localhost:8000/ws/realtime')}")
+    print(f"  {_cyan('📖')} API Docs:  {_cyan('http://localhost:8000/docs')}\n")
 
     proc = subprocess.Popen(cmd, cwd=str(ROOT_DIR))
     return proc
@@ -800,17 +800,17 @@ def cmd_frontend() -> subprocess.Popen:
     _banner("Starting Frontend Dashboard (React + Vite)")
 
     if not DASHBOARD_DIR.exists():
-        print(f"❌ {DASHBOARD_DIR} not found.")
+        print(f"  {_red('✘')} {DASHBOARD_DIR} not found.")
         sys.exit(1)
 
     # Check if node_modules exist
     if not (DASHBOARD_DIR / "node_modules").exists():
-        print("📦 Installing frontend dependencies...")
+        print(f"  {_yellow('📦')} Installing frontend dependencies...")
         subprocess.run(["npm", "install"], cwd=str(DASHBOARD_DIR), shell=True, check=True)
 
     cmd = ["npm", "run", "dev"]
-    print(f"$ {' '.join(cmd)} (in dashboard/)")
-    print("🖥️  Dashboard: http://localhost:5173\n")
+    print(f"  {_dim('$ ' + ' '.join(cmd) + ' (in dashboard/)')}")
+    print(f"  {_cyan('🖥️ ')} Dashboard: {_cyan('http://localhost:5173')}\n")
 
     proc = subprocess.Popen(cmd, cwd=str(DASHBOARD_DIR), shell=True)
     return proc
@@ -821,13 +821,13 @@ def cmd_check() -> int:
     _banner("Health Check — Quick Test Run")
 
     cmd = [PYTHON, "-m", "pytest", "tests/", "-q", "--tb=short"]
-    print(f"$ {' '.join(cmd)}\n")
+    print(f"  {_dim('$ ' + ' '.join(cmd))}\n")
     result = subprocess.run(cmd, cwd=str(ROOT_DIR))
 
     if result.returncode == 0:
-        print("\n✅ All checks passed!")
+        print(f"\n  {_green('✔')} All checks passed!")
     else:
-        print("\n❌ Some checks failed.")
+        print(f"\n  {_red('✘')} Some checks failed.")
 
     return result.returncode
 
@@ -840,13 +840,13 @@ def cmd_start() -> None:
     time.sleep(2)  # Wait for backend to initialize
     frontend = cmd_frontend()
 
-    print("\n" + "=" * 70)
-    print("  🚀 OS Simulator is running!")
-    print("     Backend:   http://localhost:8000")
-    print("     Dashboard: http://localhost:5173")
-    print("     API Docs:  http://localhost:8000/docs")
-    print("     Press Ctrl+C to stop all services")
-    print("=" * 70 + "\n")
+    print("\n  " + _dim("=" * 68))
+    print(f"  🚀 {_bold('OS Simulator is running!')}")
+    print(f"     Backend:   {_cyan('http://localhost:8000')}")
+    print(f"     Dashboard: {_cyan('http://localhost:5173')}")
+    print(f"     API Docs:  {_cyan('http://localhost:8000/docs')}")
+    print(f"     {_dim('Press Ctrl+C to stop all services')}")
+    print("  " + _dim("=" * 68) + "\n")
 
     try:
         # Wait on whichever exits first; if either crashes, we still clean up both
@@ -855,7 +855,7 @@ def cmd_start() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        print("\n\n🛑 Shutting down...")
+        print(f"\n\n  {_yellow('🛑')} Shutting down...")
         for proc in (backend, frontend):
             if proc.poll() is None:
                 proc.terminate()
@@ -864,30 +864,30 @@ def cmd_start() -> None:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        print("✅ All services stopped.")
+        print(f"  {_green('✔')} All services stopped.")
 
 
 def cmd_docs(build: bool = False) -> subprocess.Popen | None:
     """Serve or build the MkDocs documentation site."""
     mkdocs_cfg = ROOT_DIR / "mkdocs.yml"
     if not mkdocs_cfg.exists():
-        print(f"❌ {mkdocs_cfg} not found. Cannot serve docs.")
+        print(f"  {_red('✘')} {mkdocs_cfg} not found. Cannot serve docs.")
         sys.exit(1)
 
     if build:
         _banner("Building Documentation Site (MkDocs)")
         cmd = [PYTHON, "-m", "mkdocs", "build", "--clean"]
-        print(f"$ {' '.join(cmd)}")
+        print(f"  {_dim('$ ' + ' '.join(cmd))}")
         result = subprocess.run(cmd, cwd=str(ROOT_DIR))
         if result.returncode == 0:
-            print(f"\n📄 Static site built: {ROOT_DIR / 'site' / 'index.html'}")
+            print(f"\n  {_green('📄')} Static site built: {_cyan(str(ROOT_DIR / 'site' / 'index.html'))}")
         return None
     else:
         _banner("Serving Documentation Site (MkDocs)")
         cmd = [PYTHON, "-m", "mkdocs", "serve", "--dev-addr", "127.0.0.1:8080"]
-        print(f"$ {' '.join(cmd)}")
-        print("📖 Docs: http://localhost:8080")
-        print("   Live-reload enabled — edits to docs/ appear instantly.\n")
+        print(f"  {_dim('$ ' + ' '.join(cmd))}")
+        print(f"  {_cyan('📖')} Docs: {_cyan('http://localhost:8080')}")
+        print(f"     {_dim('Live-reload enabled — edits to docs/ appear instantly.')}\n")
         proc = subprocess.Popen(cmd, cwd=str(ROOT_DIR))
         return proc
 
@@ -896,10 +896,10 @@ def cmd_all() -> None:
     """Run tests first, then start the full stack if tests pass."""
     rc = cmd_test()
     if rc != 0:
-        print("\n❌ Tests failed. Fix issues before starting servers.")
+        print(f"\n  {_red('✘')} Tests failed. Fix issues before starting servers.")
         sys.exit(rc)
 
-    print("\n✅ All tests passed! Starting servers...\n")
+    print(f"\n  {_green('✔')} All tests passed! Starting servers...\n")
     cmd_start()
 
 
