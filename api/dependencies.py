@@ -22,5 +22,6 @@ def get_kernel() -> Kernel:
     Raises HTTP 400 Bad Request if the simulation has not completed startup lifecycle.
     """
     if kernel_instance is None:
-        raise HTTPException(status_code=400, detail="Simulation kernel not initialized")
+        # AUDIT FIX-7: 503 (Service Unavailable) is semantically correct — server is up but kernel isn't ready
+        raise HTTPException(status_code=503, detail="Simulation kernel not initialized")
     return kernel_instance

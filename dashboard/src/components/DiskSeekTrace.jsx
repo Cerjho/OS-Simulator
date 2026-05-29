@@ -6,6 +6,21 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceDot
 } from 'recharts';
 
+// AUDIT FIX-8: Extracted outside component body to prevent re-creation every render
+const DiskTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-slate-900 text-white p-2.5 rounded-lg border border-slate-700 shadow-xl text-xs font-sans">
+          <p className="font-bold text-cyan-400">Request Seq #{data.sequence}</p>
+          <p>Target Cylinder: <span className="font-mono text-white">{data.cylinder}</span></p>
+          {data.distance > 0 && <p>Seek Step: <span className="font-mono text-slate-300">{data.distance} tracks</span></p>}
+        </div>
+      );
+    }
+    return null;
+  };
+
 export default function DiskSeekTrace({ seekTrace = [], currentHead = 53, totalCylinders = 200, width = '100%', height = 240 }) {
   // Transform standard sequential numerical trace positions into linear chartable nodes
   const { chartData, computedSeekDistance } = useMemo(() => {
@@ -46,20 +61,6 @@ export default function DiskSeekTrace({ seekTrace = [], currentHead = 53, totalC
     return { chartData: data, computedSeekDistance: accumSeek };
   }, [seekTrace, currentHead]);
 
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-slate-900 text-white p-2.5 rounded-lg border border-slate-700 shadow-xl text-xs font-sans">
-          <p className="font-bold text-cyan-400">Request Seq #{data.sequence}</p>
-          <p>Target Cylinder: <span className="font-mono text-white">{data.cylinder}</span></p>
-          {data.distance > 0 && <p>Seek Step: <span className="font-mono text-slate-300">{data.distance} tracks</span></p>}
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-xl border border-slate-800 shadow-2xl flex flex-col h-full">
       <div className="flex justify-between items-center mb-2">
@@ -99,7 +100,7 @@ export default function DiskSeekTrace({ seekTrace = [], currentHead = 53, totalC
               tick={{ fill: '#cbd5e1', fontSize: 10, fontFamily: 'monospace' }}
               width={35}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<DiskTooltip />} />
             
             {/* Draw active glowing pointer overlay highlighting exact currentHead endpoint */}
             {chartData.length > 0 && (

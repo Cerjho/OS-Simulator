@@ -1,7 +1,10 @@
 # core/kernel.py
 from __future__ import annotations
+import logging
 import random
 from typing import Any
+
+logger = logging.getLogger(__name__)
 from core.config import SimConfig, load_config
 from core.clock import SimulationClock
 from core.interrupt import InterruptController, InterruptType
@@ -57,6 +60,10 @@ class Kernel:
         self._spawn_counter: int = 0  # Auto-spawn naming counter
         self._rng: random.Random = random.Random(42)  # Deterministic RNG for reproducibility
         self._freed_pids: set[int] = set()  # BUG-46 fix: init in __init__ not via hasattr
+        self._deadlock_recovery_countdown: int = 0  # AUDIT FIX-3: proper init
+        self._pending_deadlock_cycles: list[list[int]] = []  # AUDIT FIX-3: proper init
+        self._last_ctx_switch_count: int = 0  # AUDIT FIX-1: track for TLB flush
+        self._context_switch_overhead: int = 0  # AUDIT FIX-2: remaining overhead ticks
 
         # Register the kernel's own tick callback
         self.clock.on_tick(self._on_tick)
@@ -400,6 +407,15 @@ class Kernel:
         # Step 3: Scheduler decides who runs next (updates running process)
         if self.scheduler and self.process_manager:
             self.scheduler.tick(tick, self.process_manager)
+            # AUDIT FIX-1: Flush TLB on context switch to prevent stale translations.
+            # The TLB docstring specifies "Fully invalidated on every context switch."
+            if self.memory_manager and self.process_manager.context_switch_count != self._last_ctx_switch_count:
+                self._last_ctx_switch_count = self.process_manager.context_switch_count
+                if hasattr(self.memory_manager, '_tlb') and self.memory_manager._tlb.size > 0:
+                    self.memory_manager._tlb.invalidate_all()
+                # AUDIT FIX-2: Apply context-switch cost — CPU is busy saving/restoring state
+                self._context_switch_overhead = self.config.cpu.context_switch_cost
+
         # Step 4: Execute one burst unit for running process
         if self.process_manager:
             running_pid = self.process_manager.running.pid if self.process_manager.running else None
@@ -440,7 +456,12 @@ class Kernel:
                         pid=running_pid, device_id="disk0", cylinder=target_cyl, operation="read"
                     )
 
-            self.process_manager.execute_tick(tick)
+            # AUDIT FIX-2: During context-switch overhead, CPU is busy — skip burst execution.
+            # Ready processes still accumulate waiting time (correct per Silberschatz Section 6.3).
+            if self._context_switch_overhead > 0:
+                self._context_switch_overhead -= 1
+            else:
+                self.process_manager.execute_tick(tick)
 
             # BUG-01 fix: Use post-execute program_counter for acquire requests.
             # After execute_tick, program_counter has been incremented, so the current
@@ -465,9 +486,9 @@ class Kernel:
         # Step 8: Deadlock detection (runs every detection_interval ticks)
         if self.deadlock_detector and tick > 0:
             # Process delayed deadlock recovery if a cycle was previously detected
-            if getattr(self, "_deadlock_recovery_countdown", 0) > 0:
+            if self._deadlock_recovery_countdown > 0:
                 self._deadlock_recovery_countdown -= 1
-                if self._deadlock_recovery_countdown == 0 and getattr(self, "_pending_deadlock_cycles", None):
+                if self._deadlock_recovery_countdown == 0 and self._pending_deadlock_cycles:
                     affected_pids = self.deadlock_detector.recover(self._pending_deadlock_cycles, self.config.deadlock.recovery_strategy)
                     if affected_pids and self.process_manager:
                         for victim_pid in affected_pids:
@@ -480,8 +501,9 @@ class Kernel:
                                 try:
                                     self.process_manager.unblock(victim_pcb, tick)
                                     self.process_manager.terminate(victim_pcb, tick)
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    # AUDIT FIX-5: Log instead of silently swallowing
+                                    logger.warning("Deadlock recovery failed for PID %d: %s", victim_pid, e)
                     self._pending_deadlock_cycles = []
 
             # Standard detection runs on intervals
@@ -491,7 +513,7 @@ class Kernel:
                 if cycles:
                     # Delay recovery by 3 ticks (typically ~1.5 - 3 seconds) 
                     # so the deadlock state is broadcasted to the dashboard UI and visibly renders.
-                    if self.config.deadlock.recovery_strategy != "none" and getattr(self, "_deadlock_recovery_countdown", 0) == 0:
+                    if self.config.deadlock.recovery_strategy != "none" and self._deadlock_recovery_countdown == 0:
                         self._deadlock_recovery_countdown = 3
                         self._pending_deadlock_cycles = cycles
         # Step 9: Collect metrics snapshot
