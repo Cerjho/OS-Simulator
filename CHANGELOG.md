@@ -16,9 +16,11 @@ All notable changes to the OS-Simulator project will be documented in this file.
 - HTTP 503 (Service Unavailable) returned when kernel is not initialized, was HTTP 400 (AUDIT FIX-7)
 - DiskSeekTrace tooltip component extracted to module level to prevent re-creation on every render (AUDIT FIX-8)
 - `run_experiment_preset` decomposed from 120-line monolith into 4 focused helper functions (AUDIT FIX-9)
+- Redesigned `priority_inversion` workload preset: corrected inverted priority values, forced a preemptive priority scheduler, and staggered process arrival times to properly demonstrate unbounded priority starvation.
 
 ### Fixed
 - `_deadlock_recovery_countdown` and `_pending_deadlock_cycles` now properly initialized in `__init__` instead of using `getattr()` workarounds (AUDIT FIX-3)
+- Fixed major regression in context-switch cost (AUDIT FIX-2) where synchronization requests were erroneously evaluated during CPU idle ticks, causing unhandled `DeadlockWarning` exceptions and permanently freezing the kernel tick loop around tick 121.
 
 ## [1.0.0] — 2026-05-28
 

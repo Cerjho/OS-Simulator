@@ -154,7 +154,8 @@ class Kernel:
     def inject_process(self, spec: dict[str, Any]) -> int:
         """
         Create a new process mid-simulation from a spec dict.
-        spec keys: name (str), burst (int), priority (int), memory_pages (int)
+        spec keys: name (str), burst (int), priority (int), memory_pages (int),
+                   arrival_time (int, optional — defaults to current tick)
         Returns the new process's PID.
         """
         # RT-BUG-02 fix: Guard against inject before subsystem init
@@ -165,7 +166,7 @@ class Kernel:
             burst_time=spec["burst"],
             priority=spec.get("priority", 5),
             memory_pages=spec.get("memory_pages", 4),
-            arrival_time=self.clock.tick_count,
+            arrival_time=spec.get("arrival_time", self.clock.tick_count),
             sync_requests=spec.get("sync_requests", []),
         )
 
@@ -418,60 +419,60 @@ class Kernel:
 
         # Step 4: Execute one burst unit for running process
         if self.process_manager:
-            running_pid = self.process_manager.running.pid if self.process_manager.running else None
-
-            # BUG-02 fix: Process sync release requests BEFORE execute_tick so that
-            # releases scheduled at the final burst tick are not lost when the process terminates.
-            if self.sync_manager and self.process_manager.running and running_pid is not None:
-                pre_pc = self.process_manager.running.program_counter
-                pcb = self.process_manager.running
-                for req in pcb.sync_requests:
-                    if req.get("tick") == pre_pc and req.get("action") == "release":
-                        self.sync_manager.process_request(pcb.pid, "release", req.get("resource"), tick)
-
-            # Feature: Simulate realistic memory access during execution with locality
-            if self.memory_manager and self.process_manager.running and running_pid is not None:
-                pcb = self.process_manager.running
-                if pcb.memory_pages > 0:
-                    if pcb.last_accessed_page is None:
-                        pcb.last_accessed_page = 0
-                    
-                    # 20% chance to jump to next page (simulating sequential scan), 80% spatial locality
-                    pseudo_rand = (tick * 17 + pcb.pid * 31) % 100
-                    if pseudo_rand < 20:
-                        pcb.last_accessed_page = (pcb.last_accessed_page + 1) % pcb.memory_pages
-                    
-                    frame = self.memory_manager.translate(pcb.pid, pcb.last_accessed_page, tick)
-                    if frame is None:
-                        self.memory_manager.handle_page_fault_direct(pcb.pid, pcb.last_accessed_page, tick)
-
-            # Feature: Simulate realistic disk I/O requests for active processes to keep Disk Arm Trace alive.
-            # Uses the kernel's seeded PRNG instead of deterministic modular arithmetic to avoid
-            # degenerate residue cycles where certain PIDs would never generate I/O.
-            if self.io_manager and self.process_manager.running and running_pid is not None:
-                if self._rng.randint(1, 100) <= 15:  # ~15% chance per tick
-                    cylinders = max(self.config.disk.cylinders, 1)
-                    target_cyl = self._rng.randint(0, cylinders - 1)
-                    self.io_manager.submit_io(
-                        pid=running_pid, device_id="disk0", cylinder=target_cyl, operation="read"
-                    )
-
             # AUDIT FIX-2: During context-switch overhead, CPU is busy — skip burst execution.
-            # Ready processes still accumulate waiting time (correct per Silberschatz Section 6.3).
             if self._context_switch_overhead > 0:
                 self._context_switch_overhead -= 1
+                # Ready processes still accumulate waiting time (correct per Silberschatz Section 6.3).
+                for pcb in self.process_manager.ready_queue:
+                    pcb.waiting_time += 1
             else:
+                running_pid = self.process_manager.running.pid if self.process_manager.running else None
+
+                # BUG-02 fix: Process sync release requests BEFORE execute_tick so that
+                # releases scheduled at the final burst tick are not lost when the process terminates.
+                if self.sync_manager and self.process_manager.running and running_pid is not None:
+                    pre_pc = self.process_manager.running.program_counter
+                    pcb = self.process_manager.running
+                    for req in pcb.sync_requests:
+                        if req.get("tick") == pre_pc and req.get("action") == "release":
+                            self.sync_manager.process_request(pcb.pid, "release", req.get("resource"), tick)
+
+                # Feature: Simulate realistic memory access during execution with locality
+                if self.memory_manager and self.process_manager.running and running_pid is not None:
+                    pcb = self.process_manager.running
+                    if pcb.memory_pages > 0:
+                        if pcb.last_accessed_page is None:
+                            pcb.last_accessed_page = 0
+                        
+                        # 20% chance to jump to next page (simulating sequential scan), 80% spatial locality
+                        pseudo_rand = (tick * 17 + pcb.pid * 31) % 100
+                        if pseudo_rand < 20:
+                            pcb.last_accessed_page = (pcb.last_accessed_page + 1) % pcb.memory_pages
+                        
+                        frame = self.memory_manager.translate(pcb.pid, pcb.last_accessed_page, tick)
+                        if frame is None:
+                            self.memory_manager.handle_page_fault_direct(pcb.pid, pcb.last_accessed_page, tick)
+
+                # Feature: Simulate realistic disk I/O requests for active processes to keep Disk Arm Trace alive.
+                if self.io_manager and self.process_manager.running and running_pid is not None:
+                    if self._rng.randint(1, 100) <= 15:  # ~15% chance per tick
+                        cylinders = max(self.config.disk.cylinders, 1)
+                        target_cyl = self._rng.randint(0, cylinders - 1)
+                        self.io_manager.submit_io(
+                            pid=running_pid, device_id="disk0", cylinder=target_cyl, operation="read"
+                        )
+
                 self.process_manager.execute_tick(tick)
 
-            # BUG-01 fix: Use post-execute program_counter for acquire requests.
-            # After execute_tick, program_counter has been incremented, so the current
-            # tick's PC is (program_counter - 1) for the process that just executed.
-            if self.sync_manager and self.process_manager.running and self.process_manager.running.pid == running_pid:
-                pcb = self.process_manager.running
-                current_pc = pcb.program_counter  # post-increment value
-                for req in pcb.sync_requests:
-                    if req.get("tick") == current_pc and req.get("action") != "release":
-                        self.sync_manager.process_request(pcb.pid, req.get("action"), req.get("resource"), tick)
+                # BUG-01 fix: Use post-execute program_counter for acquire requests.
+                # After execute_tick, program_counter has been incremented, so the current
+                # tick's PC is (program_counter - 1) for the process that just executed.
+                if self.sync_manager and self.process_manager.running and self.process_manager.running.pid == running_pid:
+                    pcb = self.process_manager.running
+                    current_pc = pcb.program_counter  # post-increment value
+                    for req in pcb.sync_requests:
+                        if req.get("tick") == current_pc and req.get("action") != "release":
+                            self.sync_manager.process_request(pcb.pid, req.get("action"), req.get("resource"), tick)
         # Step 4.5: Free memory for terminated processes and cap terminated list
         self._cleanup_terminated_processes(tick)
         # Step 5: Memory manager handles any deferred work

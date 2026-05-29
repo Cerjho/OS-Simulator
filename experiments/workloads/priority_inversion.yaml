@@ -1,9 +1,17 @@
 workload_name: Priority Inversion & Starvation Workload
 seed: 123
+scheduler:
+  algorithm: priority
+  preemptive: true
+  aging_interval: 200
 processes:
+  # LOW_PRI arrives first (tick 0) and grabs the shared lock at PC=1.
+  # With context_switch_cost=2, it needs ~3 ticks to reach PC=1.
+  # No other process arrives until tick 6, giving LOW_PRI enough time.
   - name: LOW_PRI
     burst: 25
-    priority: 1
+    priority: 10
+    arrival_time: 0
     memory_pages: 4
     sync_requests:
       - tick: 1
@@ -12,9 +20,16 @@ processes:
       - tick: 24
         action: release
         resource: SHARED_DB
+
+  # HIGH_PRI_1 arrives at tick 10. The preemptive scheduler immediately
+  # gives it the CPU. When it tries to acquire SHARED_DB at PC=3,
+  # LOW_PRI already holds it → HIGH_PRI_1 BLOCKS.
+  # THIS IS PRIORITY INVERSION: a high-priority process waits for
+  # a low-priority process to release a shared resource.
   - name: HIGH_PRI_1
     burst: 10
-    priority: 9
+    priority: 1
+    arrival_time: 10
     memory_pages: 2
     sync_requests:
       - tick: 3
@@ -23,9 +38,12 @@ processes:
       - tick: 9
         action: release
         resource: SHARED_DB
+
+  # HIGH_PRI_2 arrives at tick 12. Also blocks on SHARED_DB.
   - name: HIGH_PRI_2
     burst: 12
-    priority: 8
+    priority: 2
+    arrival_time: 12
     memory_pages: 2
     sync_requests:
       - tick: 5
@@ -34,7 +52,15 @@ processes:
       - tick: 11
         action: release
         resource: SHARED_DB
+
+  # MED_PRI_NOISE (priority 5) arrives at tick 6.
+  # Once HIGH_PRI_1 and HIGH_PRI_2 are BLOCKED waiting for the lock,
+  # MED_PRI_NOISE runs instead of LOW_PRI (because pri 5 < pri 10).
+  # This is UNBOUNDED PRIORITY INVERSION: the medium-priority process
+  # indirectly delays the high-priority ones by starving the low-priority
+  # lock holder of CPU time.
   - name: MED_PRI_NOISE
     burst: 30
     priority: 5
+    arrival_time: 6
     memory_pages: 3
