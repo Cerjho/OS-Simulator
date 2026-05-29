@@ -79,6 +79,7 @@ This runs the full test suite first. If all tests pass, it automatically starts 
 
 | Command | Description |
 |---------|-------------|
+| `python sim_launcher.py setup` | Run first-time setup wizard |
 | `python sim_launcher.py start` | Start backend + frontend together |
 | `python sim_launcher.py all` | Run tests first, then start servers (only if tests pass) |
 | `python sim_launcher.py backend` | Start only the FastAPI backend server |
@@ -168,6 +169,7 @@ Once the system is running, these endpoints are available:
 Once the dashboard is open:
 
 *   **Start/Stop:** Use the control panel to start, pause, or stop the simulation clock.
+*   **Run Presets:** Select from built-in evaluation preset workloads in the Control Panel to quickly test specific scenarios like deadlock or priority inversion.
 *   **Change Algorithm:** Go to the Configuration tab to switch between scheduling algorithms (e.g., FCFS to Round Robin) or memory algorithms on the fly.
 *   **View Logs:** Check the terminal running the backend for detailed event logs, or inspect the Gantt chart and memory maps in the UI.
 

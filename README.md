@@ -19,6 +19,7 @@ Press **Ctrl+C** to stop all services.
 Other useful commands:
 
 ```bash
+python sim_launcher.py setup     # Run first-time setup wizard
 python sim_launcher.py all       # Run tests first, then launch if passing
 python sim_launcher.py docs      # Serve the documentation site (localhost:8080)
 python sim_launcher.py test      # Run all unit tests with coverage
@@ -80,6 +81,12 @@ python -m pytest tests/unit/test_scheduler_fcfs.py -v
 ```
 
 ## Running Experiments
+
+### Evaluation Preset Workloads
+
+The simulator includes 7 built-in evaluation preset workloads that configure the OS for specific scenarios (e.g., deadlock demonstration, memory pressure, I/O heavy). You can run them directly from the dashboard UI via the **Control Panel**.
+
+### CLI Benchmarks
 
 ```bash
 # Run all benchmark experiments
