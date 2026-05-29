@@ -53,8 +53,12 @@ export default function ProcessTable({ processes = [], onSort }) {
       colorStyles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
     } else if (rawState.includes('ready')) {
       colorStyles = 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-    } else if (rawState.includes('blocked') || rawState.includes('waiting')) {
+    } else if (rawState.includes('blocked')) {
       colorStyles = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+    } else if (rawState.includes('waiting')) {
+      colorStyles = 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+    } else if (rawState.includes('zombie')) {
+      colorStyles = 'bg-red-500/10 text-red-400 border-red-500/30';
     }
 
     return (
@@ -118,7 +122,14 @@ export default function ProcessTable({ processes = [], onSort }) {
                     {proc.pid}
                   </td>
                   <td className="py-2.5 px-3 font-semibold text-white font-sans">
-                    {proc.name}
+                    <div className="flex flex-col">
+                      <span>{proc.name}</span>
+                      {proc.parent_pid !== undefined && proc.parent_pid !== null && (
+                        <span className="text-[9px] text-slate-500 mt-0.5 uppercase tracking-wider">
+                          Parent: PID {proc.parent_pid}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-2.5 px-3 text-center font-sans">
                     {renderStateBadge(proc.state)}

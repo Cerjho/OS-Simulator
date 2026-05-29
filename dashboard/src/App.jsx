@@ -40,10 +40,12 @@ function MonitorPanel({ state }) {
   const disk = state?.disk || {};
   const processes = state?.processes || [];
 
-  const runningCount = processes.filter((p) => p.state === 'RUNNING').length;
-  const readyCount = processes.filter((p) => p.state === 'READY').length;
-  const blockedCount = processes.filter((p) => p.state === 'BLOCKED').length;
-  const terminatedCount = processes.filter((p) => p.state === 'TERMINATED').length;
+  const runningCount = processes.filter((p) => p.state === 'running').length;
+  const readyCount = processes.filter((p) => p.state === 'ready').length;
+  const blockedCount = processes.filter((p) => p.state === 'blocked').length;
+  const waitingCount = processes.filter((p) => p.state === 'waiting').length;
+  const zombieCount = processes.filter((p) => p.state === 'zombie').length;
+  const terminatedCount = processes.filter((p) => p.state === 'terminated').length;
 
   const MetricRow = ({ label, value, accent }) => (
     <div className="flex justify-between items-center py-1 border-b border-slate-800/40 last:border-0">
@@ -65,7 +67,7 @@ function MonitorPanel({ state }) {
         <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1.5">
           Process States
         </span>
-        <div className="grid grid-cols-4 gap-1.5 text-center">
+        <div className="grid grid-cols-3 gap-1.5 text-center">
           <div className="bg-emerald-500/10 rounded px-1 py-1.5 border border-emerald-500/20">
             <span className="text-lg font-bold text-emerald-400 block">{runningCount}</span>
             <span className="text-[9px] text-emerald-500/80 uppercase">Run</span>
@@ -77,6 +79,14 @@ function MonitorPanel({ state }) {
           <div className="bg-amber-500/10 rounded px-1 py-1.5 border border-amber-500/20">
             <span className="text-lg font-bold text-amber-400 block">{blockedCount}</span>
             <span className="text-[9px] text-amber-500/80 uppercase">Block</span>
+          </div>
+          <div className="bg-purple-500/10 rounded px-1 py-1.5 border border-purple-500/20">
+            <span className="text-lg font-bold text-purple-400 block">{waitingCount}</span>
+            <span className="text-[9px] text-purple-500/80 uppercase">Wait</span>
+          </div>
+          <div className="bg-red-500/10 rounded px-1 py-1.5 border border-red-500/20">
+            <span className="text-lg font-bold text-red-400 block">{zombieCount}</span>
+            <span className="text-[9px] text-red-500/80 uppercase">Zombie</span>
           </div>
           <div className="bg-slate-500/10 rounded px-1 py-1.5 border border-slate-600/20">
             <span className="text-lg font-bold text-slate-400 block">{terminatedCount}</span>
