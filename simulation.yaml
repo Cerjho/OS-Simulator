@@ -32,7 +32,7 @@ processes:
   initial_load: 0
   spawn_interval_ticks: 20
 scheduler:
-  aging_interval: 50
-  algorithm: round_robin
+  aging_interval: 200
+  algorithm: priority
   preemptive: true
   time_quantum: 2
