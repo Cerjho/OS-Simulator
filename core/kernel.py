@@ -429,6 +429,17 @@ class Kernel:
                     if frame is None:
                         self.memory_manager.handle_page_fault_direct(pcb.pid, pcb.last_accessed_page, tick)
 
+            # Feature: Simulate realistic disk I/O requests for active processes to keep Disk Arm Trace alive.
+            # Uses the kernel's seeded PRNG instead of deterministic modular arithmetic to avoid
+            # degenerate residue cycles where certain PIDs would never generate I/O.
+            if self.io_manager and self.process_manager.running and running_pid is not None:
+                if self._rng.randint(1, 100) <= 15:  # ~15% chance per tick
+                    cylinders = max(self.config.disk.cylinders, 1)
+                    target_cyl = self._rng.randint(0, cylinders - 1)
+                    self.io_manager.submit_io(
+                        pid=running_pid, device_id="disk0", cylinder=target_cyl, operation="read"
+                    )
+
             self.process_manager.execute_tick(tick)
 
             # BUG-01 fix: Use post-execute program_counter for acquire requests.
